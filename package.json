@@ -12,11 +12,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/c1overzz/dsh-bili-scroll.git"
+    "url": "git+https://github.com/zxz-feng/dsh-bili-scroll.git"
   },
-  "homepage": "https://github.com/c1overzz/dsh-bili-scroll#readme",
+  "homepage": "https://github.com/zxz-feng/dsh-bili-scroll#readme",
   "bugs": {
-    "url": "https://github.com/c1overzz/dsh-bili-scroll/issues"
+    "url": "https://github.com/zxz-feng/dsh-bili-scroll/issues"
   },
   "license": "MIT",
   "type": "module",
@@ -76,6 +76,5 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "forkOf": "https://github.com/c1overzz/dsh-bili-scroll",
-  "_fork_note": "私人 fork，不追上游；发布到自己的 GitHub 后把 repository/homepage/bugs 改成自己仓库地址"
+  "forkOf": "https://github.com/c1overzz/dsh-bili-scroll"
 }
