@@ -1,5 +1,10 @@
 # dsh-bili-scroll ｜ 刷B站
 
+> ⚠️ **这是个人 fork（私人版），不是上游** —— 上游见 [c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)。
+> 相对上游 2.0.4 多出的东西（私信会话、按工具口径记额度、通用同源判断…）见 [FORK.md](FORK.md)。
+> 装法一样：`dsh plugin --profile web add <本仓库地址>`，装完重启一次 dsh。
+
+
 > **先看三行**
 > - 需要 **dsh ≥ `0.1.7-rc.1`**（本机是 `0.1.7-rc.2`）。⚠️ 版本不满足时，**内核会静默跳过这个插件** —— 装了跟没装一样，不会报错。
 > - **空间**：不装「本地转写」约 **84 MB**；装了转写约 **1 GB**（其中 Whisper 模型 538 MB，可在设置里换更小的模型）。

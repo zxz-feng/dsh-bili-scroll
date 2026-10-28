@@ -1,0 +1,26 @@
+node_modules/
+
+# 运行时（家目录里的东西，别进仓库）
+*.log
+*.log.1
+out/
+digest/
+reports/
+qrcode*.png
+bili_credential.json
+state.json
+verify-state.json
+pick-quota.json
+dm-*.json
+duty-session.json
+duty-memory.md
+seen.md
+config.json
+local-override.json
+headless-overlay.yml
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+*.swp

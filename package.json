@@ -1,7 +1,7 @@
 {
   "name": "dsh-bili-scroll",
-  "version": "2.0.4",
-  "description": "DSH 插件：每天替你刷一轮 B站 —— 读字幕挑出值得的、写一份日报，值得的就 @ 你",
+  "version": "2.0.4-fish.1",
+  "description": "DSH 插件：每天替你刷一轮 B站 —— 读字幕挑出值得的、写一份日报，值得的就 @ 你（个人 fork：私信会话 / 工具口径额度 / 通用同源判断）",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -10,9 +10,14 @@
     "mcp",
     "duty"
   ],
-  "repository": { "type": "git", "url": "git+https://github.com/c1overzz/dsh-bili-scroll.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/c1overzz/dsh-bili-scroll.git"
+  },
   "homepage": "https://github.com/c1overzz/dsh-bili-scroll#readme",
-  "bugs": { "url": "https://github.com/c1overzz/dsh-bili-scroll/issues" },
+  "bugs": {
+    "url": "https://github.com/c1overzz/dsh-bili-scroll/issues"
+  },
   "license": "MIT",
   "type": "module",
   "main": "index.js",
@@ -70,5 +75,7 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
-  }
+  },
+  "forkOf": "https://github.com/c1overzz/dsh-bili-scroll",
+  "_fork_note": "私人 fork，不追上游；发布到自己的 GitHub 后把 repository/homepage/bugs 改成自己仓库地址"
 }
