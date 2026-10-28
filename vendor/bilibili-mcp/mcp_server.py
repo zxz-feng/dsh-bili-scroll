@@ -20,6 +20,8 @@ import base64
 import os
 import sys
 import tempfile
+import threading
+from datetime import datetime
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
@@ -519,6 +521,91 @@ async def bili_video_info(bvid: str) -> str:
 
 
 # ========== Tool 6: 回复评论 ==========
+
+# ========== Tool: 挑中记账（硬闸） ==========
+# ⭐⭐ 2026-10-25：为什么要有这个工具
+#   以前"这一轮最多挑 N 条"只写在提示词里 —— 模型可以选择不听（实测一轮挑了 7 条，上限 5）。
+#   现在改成**必须记账**：每挑中一条都要调一次 bili_pick，宿主这边的额度用完就直接拒绝。
+#   报告里只认已经记上账的 BV 号 ⇒ 这是真的闸，不是"建议"。
+
+_PICK_LOCK = threading.Lock()
+
+
+def _pick_state_path() -> Path:
+    return Path(os.environ.get("BILI_DUTY_HOME", str(Path(__file__).parent))) / "pick-quota.json"
+
+
+def _load_pick() -> dict:
+    p = _pick_state_path()
+    try:
+        if p.exists():
+            return json.loads(p.read_text("utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_pick(d: dict) -> None:
+    try:
+        _pick_state_path().write_text(json.dumps(d, ensure_ascii=False, indent=2), "utf-8")
+    except Exception as e:
+        print(f"[bili-mcp] 写 pick-quota 失败：{e}", file=sys.stderr)
+
+
+def _today_key() -> str:
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+@tool()
+async def bili_pick(bvid: str, why: str = "", level: str = "值得看") -> str:
+    """
+    挑中一个视频时**必须**调用这个记账，否则这一条不算数（宿主只认记过账的）。
+    额度用完后再调会直接被拒绝 —— 那时候就该收尾写报告了。
+
+    Args:
+        bvid: 挑中的视频 BV 号，如 "BV1xxxxxxxxx"
+        why: 一句话说为什么挑中它（你自己的理由，别写成"信息价值"）
+        level: 档位，只能是 值得看 / 可以看（都不行就别调这个工具）
+
+    Returns:
+        剩余额度 / 拒绝原因
+    """
+    import re as _re
+    m = _re.search(r"BV[0-9A-Za-z]{10}", str(bvid or ""))
+    if not m:
+        return json.dumps({"ok": False, "reason": "BV 号格式不对", "left": 0}, ensure_ascii=False)
+    bv = m.group(0)
+
+    with _PICK_LOCK:
+        st = _load_pick()
+        today = _today_key()
+        if st.get("day") != today:
+            st = {"day": today, "picked": [], "roundPicked": 0, "sessionId": st.get("sessionId")}
+        # 单轮上限由宿主下发的 env 决定（每轮开始时宿主会重置 roundPicked）
+        per_round = int(os.environ.get("BILI_PICK_PER_ROUND", "0") or 0)
+        per_day = int(os.environ.get("BILI_PICK_PER_DAY", "0") or 0)
+
+        picked = st.setdefault("picked", [])
+        if bv in picked:
+            return json.dumps({"ok": True, "dup": True, "bvid": bv,
+                               "left": max(0, per_round - st.get("roundPicked", 0)) if per_round else -1},
+                              ensure_ascii=False)
+        if per_day > 0 and len(picked) >= per_day:
+            return json.dumps({"ok": False, "reason": f"今天已经挑够 {per_day} 条了，这一轮到此为止",
+                               "bvid": bv, "left": 0}, ensure_ascii=False)
+        if per_round > 0 and int(st.get("roundPicked", 0)) >= per_round:
+            return json.dumps({"ok": False,
+                               "reason": f"这一轮已经记满 {per_round} 条 —— 停手，写报告收尾",
+                               "bvid": bv, "left": 0}, ensure_ascii=False)
+
+        picked.append(bv)
+        st["roundPicked"] = int(st.get("roundPicked", 0)) + 1
+        st.setdefault("notes", {})[bv] = {"why": str(why)[:200], "level": str(level)[:10]}
+        _save_pick(st)
+        left = max(0, per_round - st["roundPicked"]) if per_round else -1
+        return json.dumps({"ok": True, "bvid": bv, "n": st["roundPicked"], "left": left,
+                           "total_today": len(picked)}, ensure_ascii=False)
+
 
 @tool()
 async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0) -> str:
@@ -1040,6 +1127,26 @@ async def bili_send_message(receiver_uid: int, text: str) -> str:
     if not text or not text.strip():
         return json.dumps({"success": False, "error": "text 不能为空"}, ensure_ascii=False)
 
+    # ⭐⭐ 2026-10-25：值班那轮「私信一次最多提 1 条」—— 做成硬闸，不只靠提示词。
+    #    背景：主人说私信像工作报告（每小时一份 5 条清单），不喜欢。
+    #    ⚠️ 只有设置了 BILI_DM_PER_ROUND 的轮次才限（值班轮）；私信对话那轮不设 ⇒ 不受限。
+    _cap = int(os.environ.get("BILI_DM_PER_ROUND", "0") or 0)
+    if _cap > 0:
+        _mark = Path(os.environ.get("BILI_DUTY_HOME", str(Path(__file__).parent))) / "dm-round-count.json"
+        try:
+            _d = json.loads(_mark.read_text("utf-8")) if _mark.exists() else {}
+        except Exception:
+            _d = {}
+        _n = int(_d.get("n", 0))
+        if _n >= _cap:
+            return json.dumps({
+                "success": False,
+                "error": f"这一轮已经私信过 {_cap} 条了 —— 私信是聊天不是汇报，别再发了；"
+                         f"挑中的其它视频记在报告里就行",
+            }, ensure_ascii=False)
+        # ⚠️ 这里**先不自增**：发送失败（超 500 字 / 风控 / 没回执）不该白占额度。
+        #    成功之后（下面 try 块末尾）才 +1；失败或抛异常都不计。
+
     try:
         result = await session.send_msg(
             credential=cred,
@@ -1066,6 +1173,17 @@ async def bili_send_message(receiver_uid: int, text: str) -> str:
                 "error": "接口回了成功，但**没有投递回执（msg_key）** ⇒ 可能没真正送到（常见于：对方不接受陌生人私信 / 被风控）",
                 "data": data,
             }, ensure_ascii=False)
+        # ⭐ 真的投递成功才占额度（前面查过 _cap，这里 +1）
+        if _cap > 0:
+            try:
+                _d2 = json.loads(_mark.read_text("utf-8")) if _mark.exists() else {}
+            except Exception:
+                _d2 = {}
+            _d2["n"] = int(_d2.get("n", 0)) + 1
+            try:
+                _mark.write_text(json.dumps(_d2, ensure_ascii=False), "utf-8")
+            except Exception:
+                pass
         return json.dumps({
             "success": True,
             "message": f"私信已投递（回执 {str(msg_key)[:12]}…）",
