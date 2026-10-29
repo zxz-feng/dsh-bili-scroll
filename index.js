@@ -92,6 +92,10 @@ export const Config = !z ? undefined : z.object({
   dmWatchMinutes: z.natural().default(1).extra('volatile', true),
   /** 私信回复每天最多几条（防刷） */
   dmReplyPerDay: z.natural().default(0).extra('volatile', true),
+  /** ⭐ 私信会话最多来回几轮就换新会话（我加的 dmSession 能力；原来是硬编码 50） */
+  dmSessionTurns: z.natural().default(50).extra('volatile', true),
+  /** ⭐ 私信会话最长活几天就换新会话（原来硬编码 30 天） */
+  dmSessionMaxDays: z.natural().default(30).extra('volatile', true),
   /** 只回这个 UID（0 = 用「私信发给谁」那个） */
   dmOwnerUid: z.natural().default(0).extra('volatile', true),
   workspace: z.string().default('').extra('volatile', true),
@@ -237,7 +241,7 @@ function reportMeta() {
    *     ② **定时器回调里绝不让异常外冒**（见 tick）—— 未捕获异常会杀掉整个宿主进程。
    */
   const DEFAULTS = {
-    dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmOwnerUid: 0,
+    dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmOwnerUid: 0, dmSessionTurns: 50, dmSessionMaxDays: 30,
     personaPrompt: '',
     perDay: 5, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0,
@@ -277,6 +281,8 @@ function reportMeta() {
     if ('dmWatchMinutes' in p) p.dmWatchMinutes = Math.max(1, Math.min(120, Number(p.dmWatchMinutes) || 1))
     if ('dmReplyPerDay' in p) p.dmReplyPerDay = Math.max(0, Math.min(20, Number(p.dmReplyPerDay) || 0))
     if ('dmOwnerUid' in p) p.dmOwnerUid = Math.max(0, Number(p.dmOwnerUid) || 0)
+    if ('dmSessionTurns' in p) p.dmSessionTurns = Math.max(1, Math.min(500, Number(p.dmSessionTurns) || 50))
+    if ('dmSessionMaxDays' in p) p.dmSessionMaxDays = Math.max(1, Math.min(365, Number(p.dmSessionMaxDays) || 30))
     if ('replyToComments' in p) p.replyToComments = Boolean(p.replyToComments)
     if ('replyPerRound' in p) p.replyPerRound = Math.max(1, Math.min(Number(p.replyPerRound) || 1, 10))
     if ('favFolderId' in p) p.favFolderId = Math.max(0, Math.floor(Number(p.favFolderId) || 0))
@@ -1692,7 +1698,9 @@ function reportMeta() {
   const dmCwd = (() => { try { const d = join(stateDir, "..", "bili-duty-dm"); mkdirSync(d, { recursive: true }); return d } catch { return stateDir } })()
   const dmSessionFile = join(stateDir, "dm-session.json")
   const dmPersonaSig = () => { let h = 5381; const t = String(cfg.personaPrompt || ""); for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return "p" + h }
-  const dmSessionAlive = (s) => !!s && typeof s.id === "string" && !!s.id && s.sig === dmPersonaSig() && Number(s.turns || 0) < 50 && (Date.now() - Number(s.startedAt || 0)) < 30 * 86400000
+  const dmSessionAlive = (s) => !!s && typeof s.id === "string" && !!s.id && s.sig === dmPersonaSig()
+    && Number(s.turns || 0) < Number(cfg.dmSessionTurns || 50)
+    && (Date.now() - Number(s.startedAt || 0)) < Number(cfg.dmSessionMaxDays || 30) * 86400000
 
   function dmPromptFor(fromUid, text, resumed) {
     const raw = String(text || "").slice(0, 600)

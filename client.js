@@ -258,6 +258,9 @@ function WatchTab() {
       const [watchedPicked, setWatchedPicked] = React.useState(false) // 只看挑中的
     const [watchedState, setWatchedState] = React.useState('')
     const [watchedTier, setWatchedTier] = React.useState('')
+      // ⭐ 后加的那些输入框不再一个字段一个 useState（我加的字段太多，hooks 会堆成山）：
+      //    统一放一张草稿表，失焦才写回 —— 边打字边发请求会把光标顶掉。
+      const [draft, setDraft] = React.useState({})
     const [watchedOffset, setWatchedOffset] = React.useState(0)
     const [watchedTotal, setWatchedTotal] = React.useState(0)
     const [tab, setTab] = React.useState('daily')   // daily | taste | social | adv
@@ -297,6 +300,41 @@ function WatchTab() {
       }, [favFolders])
 
       const win = { ...DEFAULT_WINDOWS, ...(st?.windows || {}) }
+
+      // ── 通用输入控件（新增字段用；老的保留原样，不折腾能跑的东西） ──
+      const dv = (k) => (draft[k] !== undefined ? draft[k] : (cfg?.[k] ?? ''))
+      const setDv = (k, v) => setDraft((d) => ({ ...d, [k]: v }))
+      const commitNum = (k, what, min, max, dflt) => {
+        const n = Math.max(min, Math.min(Number(dv(k)) || dflt, max))
+        setDv(k, String(n))
+        patch({ [k]: n }, what)
+      }
+      const commitStr = (k, what) => { const v = String(dv(k) ?? '').trim(); setDv(k, v); patch({ [k]: v }, what) }
+      const NumRow = ({ k, label, note, min, max, dflt }) => h('div', { 'data-bd-row': '' },
+        h('div', { 'data-bd-grow': '' },
+          h('div', { 'data-bd-label': '' }, label),
+          note ? h('div', { 'data-bd-note': '' }, note) : null),
+        h('input', {
+          'data-bd-input': '', 'data-bd-num': '', type: 'number', min, max, value: dv(k),
+          onChange: (e) => setDv(k, e.target.value),
+          onBlur: () => commitNum(k, label, min, max, dflt),
+        }))
+      const TextRow = ({ k, label, note, placeholder }) => h('div', { 'data-bd-row': '' },
+        h('div', { 'data-bd-grow': '' },
+          h('div', { 'data-bd-label': '' }, label),
+          note ? h('div', { 'data-bd-note': '' }, note) : null),
+        h('input', {
+          'data-bd-input': '', value: dv(k), placeholder: placeholder || '',
+          onChange: (e) => setDv(k, e.target.value),
+          onBlur: () => commitStr(k, label),
+        }))
+      const SelRow = ({ k, label, note, options }) => h('div', null,
+        h('div', { 'data-bd-label': '' }, label),
+        note ? h('div', { 'data-bd-note': '' }, note) : null,
+        h('select', {
+          'data-bd-input': '', value: dv(k),
+          onChange: (e) => { setDv(k, e.target.value); patch({ [k]: e.target.value }, label) },
+        }, options.map(([v, t]) => h('option', { key: v, value: v }, t))))
 
       const say = (text, tone) => {
         setMsg(text); setMsgTone(tone || '')
@@ -653,6 +691,13 @@ function WatchTab() {
             'uid ' + st.ownerInfo.uid,
             st.ownerInfo.self ? '（就是现在登录的这个号）' : '',
             ' —— 想换人，改上面那个「要 @ 谁」就行') : null,
+          // ⭐ 这些是「私信会话」那几个旋钮（我 fork 里加的 dmSession：同一场私信带上下文、省提示词）
+          dmWatch ? h('div', { 'data-bd-sub': '' },
+            h(NumRow, { k: 'dmWatchMinutes', label: '多久看一次私信（分钟）', note: '最小 1。查私信本身不花 token，只有真有新消息才回一句', min: 1, max: 120, dflt: 1 }),
+            h(NumRow, { k: 'dmReplyPerDay', label: '每天最多回几条私信', note: '0 = 不限（只认主人，陌生人的私信本来就不回）', min: 0, max: 20, dflt: 0 }),
+            h(NumRow, { k: 'dmOwnerUid', label: '只认这个 UID（0 = 用上面「发给谁」那个）', note: '留 0 就行；填了就以它为准', min: 0, max: 99999999999, dflt: 0 }),
+            h(NumRow, { k: 'dmSessionTurns', label: '一场私信聊几轮就换新会话', note: '到轮数就换新的（换来的是干净上下文，代价是重发一次人设）', min: 1, max: 500, dflt: 50 }),
+            h(NumRow, { k: 'dmSessionMaxDays', label: '一场私信最多留几天', note: '过期自动换新会话', min: 1, max: 365, dflt: 30 })) : null,
           h(ToggleRow, {
             label: '本地转写没字幕的视频',
             note: '默认关；开了以后，没字幕的视频会在本机转写一遍（不花 API 钱）',
@@ -670,6 +715,11 @@ function WatchTab() {
               '点一下就好：建一个独立环境、装 faster-whisper + yt-dlp，并把 Whisper 模型也下好',
               h('br'),
               '（模型默认 small，几百 MB，走国内镜像；装一次就够了）'),
+            h(SelRow, {
+              k: 'asrModel', label: '用哪个 Whisper 模型',
+              note: '越大越准也越慢越占内存：tiny ≈ 75MB / base ≈ 145MB / small ≈ 480MB / medium ≈ 1.5GB。第一次用会自动下',
+              options: [['tiny', 'tiny —— 最快，凑合能听懂'], ['base', 'base —— 快，够用'], ['small', 'small —— 默认，平衡'], ['medium', 'medium —— 准，慢']],
+            }),
             st.asrTail ? h('div', null,
               h('div', { 'data-bd-note': '' }, st.asrInstalling ? '正在装转写依赖（进度）：' : '转写依赖的日志（末尾）—— 只有「没字幕的视频」用得到它：'),
               h('pre', { 'data-bd-pre': '' }, st.asrTail)) : null) : null),
@@ -783,6 +833,27 @@ function WatchTab() {
           (Array.isArray(st.missingDeps) && st.missingDeps.length)
             ? h('div', { 'data-bd-note': '' }, '还缺这几项：' + st.missingDeps.join(' / ') + '（qrcode = 画登录二维码用的）—— 点一次「重装主依赖」就会补上')
             : null,
+
+        /* ── 章程节奏（关注列表那套，上游一直没在页面上露过） ── */
+        h('div', { 'data-bd-sec': '', 'data-bd-group': 'adv', 'data-bd-away': tab === 'adv' ? undefined : '' },
+          h('div', { 'data-bd-h': '' }, '章程节奏（「关注什么」那套的跑法）'),
+          h(NumRow, { k: 'dutiesPerRound', label: '每轮做几条章程任务', note: '1–20；多了容易一轮跑很久', min: 1, max: 20, dflt: 3 }),
+          h(NumRow, { k: 'dutyRoundGapHours', label: '两轮之间隔几小时', note: '1–12', min: 1, max: 12, dflt: 1 }),
+          h(TextRow, { k: 'dutyNightStop', label: '几点以后不自动跑（HH:MM）', note: '填 00:00 = 不设夜间停', placeholder: '00:00' })),
+
+        /* ── 高级 ── */
+        h('div', { 'data-bd-sec': '', 'data-bd-group': 'adv', 'data-bd-away': tab === 'adv' ? undefined : '' },
+          h('div', { 'data-bd-h': '' }, '高级（一般不用动）'),
+          h(TextRow, { k: 'pythonPath', label: 'Python 解释器', note: '留 python 就用系统那个；装了 venv 会自动优先用 venv', placeholder: 'python' }),
+          h(TextRow, { k: 'dshBin', label: 'dsh 的 bin.js 路径', note: '留空自动探测，再退化成 shell 里的 dsh', placeholder: '留空自动' }),
+          h(TextRow, { k: 'headlessProfile', label: 'headless 那一轮用哪个 profile', note: '默认 headless（跟 web 分开，互不打扰）', placeholder: 'headless' }),
+          h(TextRow, { k: 'workspace', label: '跑 headless 时的工作目录', note: '留空用插件自己的地盘', placeholder: '留空' }),
+          h(ToggleRow, {
+            label: '给那一轮叠插件自己的 patch（挂 B站 MCP）',
+            note: '默认开。开了之后不用改你的 profile，那一轮自己带 B站 那只手',
+            on: Boolean(cfg.overlayMcp),
+            onChange: (v) => patch({ overlayMcp: v }, 'MCP overlay'),
+          })),
 
         /* ── 它是怎么干活的（给他看的） ── */
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'adv', 'data-bd-away': tab === 'adv' ? undefined : '' },
