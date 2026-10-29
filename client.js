@@ -328,6 +328,11 @@ function WatchTab() {
           onChange: (e) => setDv(k, e.target.value),
           onBlur: () => commitStr(k, label),
         }))
+      const TimeIn = ({ k, what }) => h('input', {
+        type: 'time', 'data-bd-input': '', value: dv(k),
+        onChange: (e) => setDv(k, e.target.value),
+        onBlur: () => commitStr(k, what),
+      })
       const SelRow = ({ k, label, note, options }) => h('div', null,
         h('div', { 'data-bd-label': '' }, label),
         note ? h('div', { 'data-bd-note': '' }, note) : null,
@@ -597,13 +602,19 @@ function WatchTab() {
             onChange: (v) => patch({ peakValley: v }, '峰谷时段自动刷'),
           }),
           sw('peakValley') ? h('div', { 'data-bd-sub': '' },
-            ...['noon', 'night'].map((k) => h(ToggleRow, {
-              key: k,
-              label: win[k].label,
-              note: `${win[k].start} – ${win[k].end}`,
-              on: sw(k),
-              onChange: (v) => patch({ [k]: v }, win[k].label),
-            }))) : null),
+            ...['noon', 'night'].map((k) => h('div', { key: k },
+              h(ToggleRow, {
+                label: win[k].label,
+                note: sw(k) ? '' : '关掉就不在这个区间跑',
+                on: sw(k),
+                onChange: (v) => patch({ [k]: v }, win[k].label),
+              }),
+              sw(k) ? h('div', { 'data-bd-row': '' },
+                h('div', { 'data-bd-grow': '' },
+                  h('div', { 'data-bd-note': '' }, '区间可以改（跨午夜也行，比如 22:00 → 06:00）')),
+                h(TimeIn, { k: k + 'Start', what: win[k].label + '开始' }),
+                h('span', { 'data-bd-note': '' }, '→'),
+                h(TimeIn, { k: k + 'End', what: win[k].label + '结束' })) : null))) : null),
 
         /* ── 一轮挑几条 ── */
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'daily', 'data-bd-away': tab === 'daily' ? undefined : '' },

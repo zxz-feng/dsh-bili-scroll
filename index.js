@@ -54,6 +54,11 @@ export const Config = !z ? undefined : z.object({
   /** 峰谷子开关：中午 / 晚上 */
   noon: z.boolean().default(true).extra('volatile', true),
   night: z.boolean().default(true).extra('volatile', true),
+  /** ⭐ 谷时区间可以改（上游写死在 lib/state.mjs 的 WINDOWS 里，页面上只能开关不能调时间） */
+  noonStart: z.string().default('12:00').extra('volatile', true),
+  noonEnd: z.string().default('14:00').extra('volatile', true),
+  nightStart: z.string().default('18:00').extra('volatile', true),
+  nightEnd: z.string().default('09:00').extra('volatile', true),
   /** 自动评论 @ 使用者（默认关 —— 会拿用户的号说话，必须他自己开） */
   autoComment: z.boolean().default(false).extra('volatile', true),
   /** ⭐ 私信投递：off=只发评论（现状）· only=只私信（完全不公开评论）· both=评论 + 私信 */
@@ -243,7 +248,7 @@ function reportMeta() {
   const DEFAULTS = {
     dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmOwnerUid: 0, dmSessionTurns: 50, dmSessionMaxDays: 30,
     personaPrompt: '',
-    perDay: 5, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
+    perDay: 5, peakValley: false, noon: true, night: true, noonStart: '12:00', noonEnd: '14:00', nightStart: '18:00', nightEnd: '09:00', autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0,
     keywords: [], commentPerRound: 1, dutiesPerRound: 3, dutyRoundGapHours: 1, dutyNightStop: '00:00', mentionName: '', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', replyToComments: false, replyPerRound: 1, favFolderId: 0,
   }
@@ -283,6 +288,9 @@ function reportMeta() {
     if ('dmOwnerUid' in p) p.dmOwnerUid = Math.max(0, Number(p.dmOwnerUid) || 0)
     if ('dmSessionTurns' in p) p.dmSessionTurns = Math.max(1, Math.min(500, Number(p.dmSessionTurns) || 50))
     if ('dmSessionMaxDays' in p) p.dmSessionMaxDays = Math.max(1, Math.min(365, Number(p.dmSessionMaxDays) || 30))
+    for (const [k, dflt] of [['noonStart', '12:00'], ['noonEnd', '14:00'], ['nightStart', '18:00'], ['nightEnd', '09:00']]) {
+      if (k in p) p[k] = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(p[k] || '')) ? String(p[k]) : dflt
+    }
     if ('replyToComments' in p) p.replyToComments = Boolean(p.replyToComments)
     if ('replyPerRound' in p) p.replyPerRound = Math.max(1, Math.min(Number(p.replyPerRound) || 1, 10))
     if ('favFolderId' in p) p.favFolderId = Math.max(0, Math.floor(Number(p.favFolderId) || 0))
@@ -290,6 +298,11 @@ function reportMeta() {
     return p
   }
 
+  /** ⭐ 实际生效的谷时区间 = 配置覆盖 lib/state.mjs 里的默认 WINDOWS（只覆盖时间点，label 不动） */
+  const winOf = (c) => ({
+    noon: { label: WINDOWS.noon.label, start: c.noonStart || WINDOWS.noon.start, end: c.noonEnd || WINDOWS.noon.end },
+    night: { label: WINDOWS.night.label, start: c.nightStart || WINDOWS.night.start, end: c.nightEnd || WINDOWS.night.end },
+  })
   const hostCfg = () => normalize(config, { ...DEFAULTS })       // 宿主那份（schema 校验过、默认值已填）
   const savedCfg = () => normalize(readJson(cfgFile, {}), { ...DEFAULTS })
   /**
@@ -629,7 +642,7 @@ function reportMeta() {
         perDay: cfg.perDay,
         // ⭐ 2026-10-19：这一轮会用哪个 dsh（空 = 没找到 ⇒ 那一轮根本跑不起来）
         dshCli: dshCliCached(),
-        windows: Object.fromEntries(Object.entries(WINDOWS).map(([k, w]) => [k, {
+        windows: Object.fromEntries(Object.entries(winOf(cfg)).map(([k, w]) => [k, {
           label: w.label, start: w.start, end: w.end,
           switchOn: Boolean(cfg[k]),
           opening: inWindow(now, w),
@@ -709,7 +722,7 @@ function reportMeta() {
         // ⭐ 设置页显式设过的键以宿主为准 ⇒ 必须跟着写一份，否则"改了没反应"（钳范围也在这里）
         host = (await persistCfg(args.patch)).host
       }
-      return { ok: true, config: cfg, windows: WINDOWS, home: stateDir, venvReady: venvReadyNow(), host }
+      return { ok: true, config: cfg, windows: winOf(cfg), home: stateDir, venvReady: venvReadyNow(), host }
     },
   })
 
@@ -1587,7 +1600,7 @@ function reportMeta() {
       const gapMs = Math.max(1, Number(cfg.dutyRoundGapHours) || 1) * 3600_000
       for (const k of ['noon', 'night']) {
         if (!cfg[k]) continue
-        if (!inWindow(now, WINDOWS[k])) continue
+        if (!inWindow(now, winOf(cfg)[k])) continue
         // 凌晨闸：夜里 0 点到窗口结束之间不跑
         const stopRaw = String(cfg.dutyNightStop || '00:00')
         const stopMin = (() => { const m = stopRaw.match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : 0 })()
@@ -2463,7 +2476,7 @@ function reportMeta() {
       ok: true,
       home: stateDir,
       config: cfg,
-      windows: WINDOWS,
+      windows: winOf(cfg),
       today,
       ranToday: st.day === today ? Number(st.count || 0) : 0,   // 今天跑了几轮
       pickedToday: countPickedToday(),                          // 今天挑到几条（从报告里数）
@@ -2551,7 +2564,7 @@ function reportMeta() {
       return sendJson(res, 200, status())
     }
     if (req.method === 'GET' && path === '/api/bili-duty/config') {
-      return sendJson(res, 200, { ok: true, config: cfg, windows: WINDOWS, home: stateDir })
+      return sendJson(res, 200, { ok: true, config: cfg, windows: winOf(cfg), home: stateDir })
     }
 
     if (req.method === 'POST' && path === '/api/bili-duty/config') {

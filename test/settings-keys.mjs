@@ -31,6 +31,8 @@ for (const r of page.matchAll(/\bcfg\.([a-zA-Z][a-zA-Z0-9_]*)/g)) touched.add(r[
 touched.delete('(动态)')
 // 峰谷两个子开关是「按 WINDOWS 表循环」渲染的（页面里没有 dv('noon') 这种写法）—— 手写进来
 for (const k of ['noon', 'night']) touched.add(k)
+// 谷时区间的四个时间点是拼出来的（dv(k + 'Start')）—— 手写进来
+for (const k of ['noonStart', 'noonEnd', 'nightStart', 'nightEnd']) touched.add(k)
 
 const unknown = [...touched].filter((k) => !defaults.has(k)).sort()
 const missing = [...defaults].filter((k) => !touched.has(k)).sort()
