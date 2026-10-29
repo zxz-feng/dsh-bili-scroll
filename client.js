@@ -738,6 +738,16 @@ function WatchTab() {
         /* ── 关注什么 / 在哪儿刷 ── */
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
           h('div', { 'data-bd-h': '' }, '关注什么'),
+          // ⭐ 这一条决定「关键词是起点还是牢笼」：开着它自己找乐子，关掉就只搜你填的词
+          h(ToggleRow, {
+            label: '自主兴趣（让它自己找乐子）',
+            note: cfg.selfInterest === false
+              ? '关着：这一轮只搜下面的关键词，不自己另起查询 —— 想看什么全由你定'
+              : '开着：下面的关键词只是起点，它会按自己的好奇心另搜几个词，看到好玩的就推（这就是「替自己刷」）',
+            on: cfg.selfInterest !== false,
+            onChange: (v) => patch({ selfInterest: v }, '自主兴趣'),
+          }),
+          h('div', { 'data-bd-label': '' }, cfg.selfInterest === false ? '只搜这些词' : '先搜这些词（起点）'),
           h('textarea', {
             'data-bd-input': '', rows: 5, placeholder: '一行一个关键词；留空用内置那几组',
             value: kws ?? '', onChange: (e) => setKws(e.target.value),

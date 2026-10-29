@@ -80,6 +80,8 @@ export const Config = !z ? undefined : z.object({
   dutyRoundGapHours: z.natural().max(12).default(1).extra('volatile', true),
   dutyNightStop: z.string().default('00:00').extra('volatile', true),
   keywords: z.array(z.string()).default([]).extra('volatile', true),
+  /** ⭐ 自主兴趣：开=按自己的好奇心逛（关键词只是起点）· 关=严格只搜关键词，不自己另起查询 */
+  selfInterest: z.boolean().default(true).extra('volatile', true),
   /** Python：指向 venv 里的那个最好 */
   pythonPath: z.string().default('python').extra('volatile', true),
   /** dsh 的 bin.js（不填就试自动探测，再退化成 shell 里的 dsh） */
@@ -250,7 +252,7 @@ function reportMeta() {
     personaPrompt: '',
     perDay: 5, peakValley: false, noon: true, night: true, noonStart: '12:00', noonEnd: '14:00', nightStart: '18:00', nightEnd: '09:00', autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0,
-    keywords: [], commentPerRound: 1, dutiesPerRound: 3, dutyRoundGapHours: 1, dutyNightStop: '00:00', mentionName: '', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', replyToComments: false, replyPerRound: 1, favFolderId: 0,
+    keywords: [], selfInterest: true, commentPerRound: 1, dutiesPerRound: 3, dutyRoundGapHours: 1, dutyNightStop: '00:00', mentionName: '', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', replyToComments: false, replyPerRound: 1, favFolderId: 0,
   }
   const normalize = (src, base) => {
     const out = { ...base }
@@ -283,6 +285,7 @@ function reportMeta() {
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
     if ('personaPrompt' in p) p.personaPrompt = String(p.personaPrompt || '').slice(0, 8000)
     if ('dmWatch' in p) p.dmWatch = Boolean(p.dmWatch)
+    if ('selfInterest' in p) p.selfInterest = Boolean(p.selfInterest)
     if ('dmWatchMinutes' in p) p.dmWatchMinutes = Math.max(1, Math.min(120, Number(p.dmWatchMinutes) || 1))
     if ('dmReplyPerDay' in p) p.dmReplyPerDay = Math.max(0, Math.min(20, Number(p.dmReplyPerDay) || 0))
     if ('dmOwnerUid' in p) p.dmOwnerUid = Math.max(0, Number(p.dmOwnerUid) || 0)
@@ -1072,7 +1075,10 @@ function reportMeta() {
         + `\n今天的账：全天上限 ${quota0} 条，已经挑了 ${already0} 条，还剩 ${left0} 条；`
         + `⭐ 这一轮最多挑 ${Math.min(Math.max(1, Number(cfg.dutiesPerRound) || 3), left0)} 条（每轮限 ${Math.max(1, Number(cfg.dutiesPerRound) || 3)} 条，别一次挑完）。`
         + `\n⭐⭐ 每挑中一条立刻调 \`bili_pick(bvid, why, level)\` 记账 —— 没记账的不算数，额度用完它会拒绝你。`
-        + `\n⭐⭐ 必须真去逛：至少 2 次自己挑的词补搜、至少 1 次 totalrank/click 翻旧的。只按关键词跑一遍 = 没干活。`
+        + (cfg.selfInterest === false
+            ? `\n⭐⭐ 这一轮**只按设置里的关键词搜**（自主兴趣关着）：别自己另起查询词。`
+              + `\n仍然要翻页、换排序（totalrank / click）把同一个词下的东西看全。`
+            : `\n⭐⭐ 必须真去逛：至少 2 次自己挑的词补搜、至少 1 次 totalrank/click 翻旧的。只按关键词跑一遍 = 没干活。`)
         + `\n报告末尾写一行 \`逛了：<你补搜的词>\`。`
         + (commentOn0 ? `\n评论：可以 @ ${cfg.mentionName}。` : `\n评论：这一轮不 @ 任何人（只写报告）。`)
         + (dmOn0
@@ -1173,11 +1179,17 @@ function reportMeta() {
             + `⭐ **这一轮最多挑 ${thisRound} 条**（每轮限 ${perRound} 条 —— 一天分好几轮跑，别一次挑完）；`
             + `\n⭐⭐ **每挑中一条，立刻调一次 \`bili_pick(bvid, why, level)\`** —— 这是硬闸：`
             + `没记账的 BV 不算数，额度用完它会直接拒绝你（那时就停手写报告）。`
-            + `\n⭐⭐ **必须真去逛**：至少 2 次 bili_search 用你自己挑的词（不是关键词设置那几个）；`
-            + `至少 1 次用 totalrank 或 click 排序翻旧东西。只拿设置里的词跑一遍就交差 = 没干活。`
-            + `\n报告末尾写一行 \`逛了：<你补搜的词>\`。`
+            + (cfg.selfInterest === false
+              ? `\n⭐⭐ **这一轮只按设置里的关键词搜**（自主兴趣关着）—— 别自己另起查询词；`
+                + `把同一个词下的结果翻页、换 totalrank / click 排序看全就行。`
+                + `\n报告末尾写一行 \`逛了：<你搜的词>\`。`
+              : `\n⭐⭐ **必须真去逛**：至少 2 次 bili_search 用你自己挑的词（不是关键词设置那几个）；`
+                + `至少 1 次用 totalrank 或 click 排序翻旧东西。只拿设置里的词跑一遍就交差 = 没干活。`
+                + `\n报告末尾写一行 \`逛了：<你补搜的词>\`。`)
         })()
-      + `关键词${kws.length ? `用这些：${kws.join('、')}` : '用章程里的默认那几组'}。`
+      + (cfg.selfInterest === false
+        ? `关键词${kws.length ? `：**只用这些** —— ${kws.join('、')}` : '：用章程里的默认那几组'}。`
+        : `关键词${kws.length ? `先搜这些：${kws.join('、')}` : '先搜章程里的默认那几组'}（只是起点，后面按你自己的好奇心逛）。`)
       + `本地转写：${cfg.transcribe
         ? (asrReadyNow()
           ? '开着，而且装好了（没字幕的视频用家里那份 asr.py 转，命令见章程）'
