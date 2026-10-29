@@ -1,6 +1,6 @@
 {
   "name": "dsh-bili-scroll",
-  "version": "2.0.4-fish.5",
+  "version": "2.0.4-fish.6",
   "description": "DSH 插件：每天替你刷一轮 B站 —— 读字幕挑出值得的、写一份日报，值得的就 @ 你（个人 fork：私信会话 / 工具口径额度 / 通用同源判断）",
   "keywords": [
     "dsh",
@@ -78,6 +78,7 @@
   },
   "forkOf": "https://github.com/c1overzz/dsh-bili-scroll",
   "scripts": {
-    "test:settings": "node test/settings-keys.mjs"
+    "test:settings": "node test/settings-keys.mjs",
+    "test": "node test/prompt-unity.mjs && node test/settings-keys.mjs"
   }
 }

@@ -1059,6 +1059,26 @@ function reportMeta() {
     } catch (e) { log('从报告抽记忆失败（不影响本轮）：' + String(e?.message ?? e)); return 0 }
   }
 
+  /**
+   * 「这一轮怎么逛」——**只此一份**，新会话和续接会话都必须调它。
+   *   起因（2026-10-29）：这两条分支以前各写一段"怎么逛"，做「自主兴趣」开关时
+   *   差点只改一处 —— 那就会出现「第一轮按开关走、后面几轮还按老规矩」的错位，
+   *   而且这种错位在日志里看不出来（两轮都"跑成了"），只能靠人肉比对提示词。
+   *   现在文案只在这里：改一处，两条路一起变。
+   */
+  const browseRule = () => {
+    const kws = Array.isArray(cfg.keywords) ? cfg.keywords.filter(Boolean) : []
+    if (cfg.selfInterest === false) {
+      const kw = kws.length ? `这一轮**只搜这些词**：${kws.join('、')}` : '这一轮**只搜章程里默认那几组词**'
+      return `\n⭐⭐ 怎么逛（自主兴趣**关着**）：${kw}，**别自己另起查询词**；`
+        + `同一个词下的结果要翻页、换 totalrank / click 排序看全。`
+        + `\n报告末尾写一行 \`逛了：<你搜的词>\`。`
+    }
+    const kw = kws.length ? `先搜这些词：${kws.join('、')}（只是起点）` : '先搜章程里默认那几组词（只是起点）'
+    return `\n⭐⭐ 怎么逛（自主兴趣**开着**）：${kw}；之后**至少 2 次**用你自己挑的词补搜（不是设置里那几个），`
+      + `**至少 1 次**换 totalrank 或 click 排序翻旧东西。只拿设置里的词跑一遍就交差 = 没干活。`
+      + `\n报告末尾写一行 \`逛了：<你补搜的词>\`。`
+  }
   const promptFor = (resumed = false) => {
     const quota0 = Math.max(0, Number(cfg.perDay) || 0)
     const already0 = countPickedToday()
@@ -1075,11 +1095,7 @@ function reportMeta() {
         + `\n今天的账：全天上限 ${quota0} 条，已经挑了 ${already0} 条，还剩 ${left0} 条；`
         + `⭐ 这一轮最多挑 ${Math.min(Math.max(1, Number(cfg.dutiesPerRound) || 3), left0)} 条（每轮限 ${Math.max(1, Number(cfg.dutiesPerRound) || 3)} 条，别一次挑完）。`
         + `\n⭐⭐ 每挑中一条立刻调 \`bili_pick(bvid, why, level)\` 记账 —— 没记账的不算数，额度用完它会拒绝你。`
-        + (cfg.selfInterest === false
-            ? `\n⭐⭐ 这一轮**只按设置里的关键词搜**（自主兴趣关着）：别自己另起查询词。`
-              + `\n仍然要翻页、换排序（totalrank / click）把同一个词下的东西看全。`
-            : `\n⭐⭐ 必须真去逛：至少 2 次自己挑的词补搜、至少 1 次 totalrank/click 翻旧的。只按关键词跑一遍 = 没干活。`)
-        + `\n报告末尾写一行 \`逛了：<你补搜的词>\`。`
+        + browseRule()
         + (commentOn0 ? `\n评论：可以 @ ${cfg.mentionName}。` : `\n评论：这一轮不 @ 任何人（只写报告）。`)
         + (dmOn0
             ? `\n私信（uid=${dmUidEff0}）：**像聊天，最多说 1 条**，带你的感受和链接，一两句。`
@@ -1097,7 +1113,6 @@ function reportMeta() {
     try {
       charterText = readFileSync(duty, 'utf8').split('<家目录>').join(stateDir)
     } catch { /* 读不到就退回"让它自己读路径"（下面提示词里会说） */ }
-    const kws = Array.isArray(cfg.keywords) ? cfg.keywords.filter(Boolean) : []
     // ⭐ 开场先让它读**工作区**的 AGENTS.md —— 这一轮的工作目录就是使用者的工作区，
     //    AGENTS.md 本来就会自动注入；这里再点一句，保证它真按使用者的设定来（别人的设定同理）。
     // ⭐ 那一轮的工作目录是**插件家**（沙箱只让它写自己工作目录里的东西 ✗），
@@ -1179,17 +1194,9 @@ function reportMeta() {
             + `⭐ **这一轮最多挑 ${thisRound} 条**（每轮限 ${perRound} 条 —— 一天分好几轮跑，别一次挑完）；`
             + `\n⭐⭐ **每挑中一条，立刻调一次 \`bili_pick(bvid, why, level)\`** —— 这是硬闸：`
             + `没记账的 BV 不算数，额度用完它会直接拒绝你（那时就停手写报告）。`
-            + (cfg.selfInterest === false
-              ? `\n⭐⭐ **这一轮只按设置里的关键词搜**（自主兴趣关着）—— 别自己另起查询词；`
-                + `把同一个词下的结果翻页、换 totalrank / click 排序看全就行。`
-                + `\n报告末尾写一行 \`逛了：<你搜的词>\`。`
-              : `\n⭐⭐ **必须真去逛**：至少 2 次 bili_search 用你自己挑的词（不是关键词设置那几个）；`
-                + `至少 1 次用 totalrank 或 click 排序翻旧东西。只拿设置里的词跑一遍就交差 = 没干活。`
-                + `\n报告末尾写一行 \`逛了：<你补搜的词>\`。`)
+            + browseRule()
         })()
-      + (cfg.selfInterest === false
-        ? `关键词${kws.length ? `：**只用这些** —— ${kws.join('、')}` : '：用章程里的默认那几组'}。`
-        : `关键词${kws.length ? `先搜这些：${kws.join('、')}` : '先搜章程里的默认那几组'}（只是起点，后面按你自己的好奇心逛）。`)
+
       + `本地转写：${cfg.transcribe
         ? (asrReadyNow()
           ? '开着，而且装好了（没字幕的视频用家里那份 asr.py 转，命令见章程）'
