@@ -1408,6 +1408,9 @@ function reportMeta() {
   //    关页面/卸载插件时能把它一起收掉（以前它没有锁、也不归 ctx.effect 管 ✗）。
   let dutyChild = null
   let dutyStartedAt = 0
+  // ⭐ 2026-10-29：当前这一轮属于哪个时间槽 / 第几次尝试（成功才占槽，见定时器那段注释）
+  let dutySlotKey = ''
+  let dutySlotTry = 0
   let dutyOut = ''   // 这一轮 headless 的原始输出（抓 sessionId、判锁冲突用）
   // ⭐ 2026-10-26：值班会话被 dsh-web 长期攥着（实测 4 个会话全被锁死，续接必失败）⇒
   //    以前只打一行日志就放弃 ⇒ 那一小时白丢（昨晚 22:39、23:02 两轮就是这么没的）。
@@ -1513,6 +1516,23 @@ function reportMeta() {
     child.stderr?.on('data', pick)
     child.on('exit', (code) => {
       log(`刷B站结束（${why}，code=${code}）`)
+      // ⭐ 2026-10-29：成功才占槽（失败留一次机会）—— 见定时器里那段注释
+      try {
+        if (dutySlotKey && String(why || '').startsWith('window:')) {
+          const giveUp = dutySlotTry >= 2
+          if (code === 0 || giveUp) {
+            const cur = readJsonFile(join(stateDir, 'state.json'), {})
+            bumpState({ __slotDone: { ...(cur.__slotDone || {}), [dutySlotKey]: true } })
+          }
+          log(code === 0
+            ? `本槽记成功（第 ${dutySlotTry} 次）`
+            : giveUp
+              ? `本槽第 ${dutySlotTry} 次也失败 ⇒ 放弃这一槽，不再重试`
+              : `本轮失败 ⇒ **不占槽**，本槽再给一次机会（第 ${dutySlotTry}/2 次）`)
+          dutySlotKey = ''
+          dutySlotTry = 0
+        }
+      } catch (e) { log('槽位记账出错（已兜住）：' + String(e?.message ?? e)) }
       // ⭐ 2026-10-25：记住这一轮的会话，下一轮续接（新会话才抓 id；续接成功就把轮数 +1）
       try {
         if (code === 0) dutyFreshRetry = 0
@@ -1672,7 +1692,13 @@ function reportMeta() {
         const minuteIntoSlot = Math.floor((now.getTime() % slotMs) / 60_000)
         if (minuteIntoSlot < Number(dice[slotKey] || 0)) continue   // 还没到本槽的随机时刻
         if (st.__slotDone?.[slotKey]) continue                     // 本槽已经跑过
-        bumpState({ __slotDone: { ...(st.__slotDone || {}), [slotKey]: true } })
+        // ⭐⭐ 2026-10-29：**成功才占槽**。以前是先记账后跑 —— 环境一坏（NO_ADAPTER）
+        //    两轮全废却把整晚的槽吃光（state.json `windows: {night: 2}` + `__slotDone` 全 true），
+        //    当晚再也不重试。现在：失败不占槽，本槽最多再给一次机会（tries>=2 才放弃）。
+        const tries = Number(st.__slotTry?.[slotKey] || 0) + 1
+        bumpState({ __slotTry: { ...(st.__slotTry || {}), [slotKey]: tries } })
+        dutySlotKey = slotKey
+        dutySlotTry = tries
         log(`本槽随机时刻到了（第 ${minuteIntoSlot} 分 / 骰子 ${dice[slotKey]} 分）⇒ 开跑`)
         bumpState({
           windows: { ...(st.windows || {}), [key]: Number(st.windows?.[key] || 0) + 1 },
