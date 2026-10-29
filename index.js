@@ -1395,6 +1395,14 @@ function reportMeta() {
   //    现在：先短退避重试 2 次；还不行就**换新会话照常刷**（记忆还在 duty-memory.md，不会失忆）。
   let dutyLockRetry = 0
   const DUTY_LOCK_RETRY_MAX = 2
+  /**
+   * ⭐ 续接失败后「立刻用新会话重跑这一轮」的次数（每个窗口最多一次）。
+   *   起因（2026-10-29 13:36 真实报废一轮）：续接的会话里记着 `provider: workbuddy-cn`，
+   *   而 headless profile 现在只注册了 `workbuddy` / `workbuddy-intl` ⇒ `NO_ADAPTER` ⇒ code=1。
+   *   老逻辑只写一行"下一轮开新会话"，**这个谷时窗口就白丢了**（要等一小时）。
+   *   换新会话本来就能跑（13:4x 那轮就是这么好的），那就当场换，别等。
+   */
+  let dutyFreshRetry = 0
   /* ───── 值班会话续接（2026-10-25 加）─────
    * 以前每轮刷B站都是全新 headless 进程 ⇒ 每次重发人设(1.2k字)+章程(16k字)、而且她"不记得昨天推过啥"。
    * 现在存 duty-session.json，下一轮带 --session-id 续接同一场。
@@ -1488,6 +1496,7 @@ function reportMeta() {
       log(`刷B站结束（${why}，code=${code}）`)
       // ⭐ 2026-10-25：记住这一轮的会话，下一轮续接（新会话才抓 id；续接成功就把轮数 +1）
       try {
+        if (code === 0) dutyFreshRetry = 0
         if (!dResume && code === 0) {
           const m = dutyOut.match(/"type"\s*:\s*"session"[^}]*?"sessionId"\s*:\s*"([^"]+)"/)
           if (m) {
@@ -1516,8 +1525,18 @@ function reportMeta() {
             if (t.unref) t.unref()
           }
         } else if (dResume && code !== 0) {
-          log(`值班会话续接失败（code=${code}）⇒ 忘掉它，下一轮开新会话`)
-          try { rmSync(dutySessionFile, { force: true }) } catch { /* 删不掉也罢 */ }
+          const noAdapter = /NO_ADAPTER|no adapter registered/i.test(dutyOut)
+          if (dutyFreshRetry < 1) {
+            dutyFreshRetry++
+            log(`值班会话续接失败（code=${code}${noAdapter ? '，NO_ADAPTER：会话里记的 provider 已经不在了' : ''}）`
+              + '⇒ 立刻换新会话重跑这一轮（不白丢这个窗口）')
+            try { rmSync(dutySessionFile, { force: true }) } catch { /* 删不掉也罢 */ }
+            const t = setTimeout(() => { try { runDuty(why) } catch (e) { log('换会话重跑起不来：' + String(e?.message ?? e)) } }, 3000)
+            if (t.unref) t.unref()
+          } else {
+            log(`值班会话续接失败（code=${code}），换新会话也失败 ⇒ 忘掉它，下一轮再来`)
+            try { rmSync(dutySessionFile, { force: true }) } catch { /* 删不掉也罢 */ }
+          }
         }
       } catch (e) { log('记住值班会话失败（不影响这一轮）：' + String(e?.message ?? e)) }
       // ⭐ 把这一轮推的视频写进共享记忆 ⇒ 私信那边能接着聊
